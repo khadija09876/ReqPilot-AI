@@ -1,7 +1,7 @@
-```text id="y9g8p2"
+text id="y9g8p2"
 streamlit>=1.40.0
 crewai>=0.86.0
 groq>=0.13.0
 litellm>=1.55.0
 python-dotenv>=1.0.1
-```
+
