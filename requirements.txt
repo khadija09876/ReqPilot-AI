@@ -1,7 +1,7 @@
-```text
-streamlit>=1.40,<2
-crewai>=1.15.22,<2
-groq>=0.31,<1
-litellm>=1.75,<2
-python-dotenv>=1.0,<2
-```
+
+streamlit==1.50.0
+crewai==1.15.22
+groq==0.31.1
+litellm==1.75.5
+python-dotenv==1.0.1
+
