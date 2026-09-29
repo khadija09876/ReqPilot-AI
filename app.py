@@ -5,8 +5,8 @@ import streamlit as st
 from crewai import Agent, Crew, Process, Task, LLM
 
 # ============================================================
-# LITELLM / GROQ COMPATIBILITY FIXES
-# Prevent 'cache_breakpoint is unsupported' errors from Groq
+# LITELLM / GROQ COMPATIBILITY FIX
+# Prevents 'cache_breakpoint is unsupported' error from Groq
 # ============================================================
 os.environ["DISABLE_PROMPT_CACHING"] = "TRUE"
 
@@ -157,22 +157,21 @@ if "last_run_time" not in st.session_state:
     st.session_state.last_run_time = None
 
 # ============================================================
-# SAFE API KEY RETRIEVAL
+# STREAMLIT DEPLOYMENT SAFE API KEY RETRIEVAL
+# Prevents 'bool' object has no attribute 'get' crash
 # ============================================================
 def get_api_key():
-    """
-    Safely retrieves GROQ_API_KEY from environment or secrets without crashing.
-    """
+    # 1. Environment Variable Check
     env_key = os.getenv("GROQ_API_KEY", "")
     if env_key and isinstance(env_key, str) and len(env_key.strip()) > 0:
         return env_key.strip()
 
+    # 2. Streamlit Cloud Secrets Check
     try:
-        if hasattr(st, "secrets") and bool(st.secrets):
-            if "GROQ_API_KEY" in st.secrets:
-                key_val = st.secrets["GROQ_API_KEY"]
-                if key_val and isinstance(key_val, str) and len(key_val.strip()) > 0:
-                    return key_val.strip()
+        if "GROQ_API_KEY" in st.secrets:
+            key_val = st.secrets["GROQ_API_KEY"]
+            if key_val and isinstance(key_val, str) and len(key_val.strip()) > 0:
+                return key_val.strip()
     except Exception:
         pass
 
@@ -182,9 +181,6 @@ def get_api_key():
 # LLM CREATION (GROQ COMPATIBLE)
 # ============================================================
 def create_llm(api_key):
-    """
-    Creates CrewAI LLM configured specifically for Groq API.
-    """
     os.environ["GROQ_API_KEY"] = api_key
 
     return LLM(
@@ -382,7 +378,8 @@ if run_analysis:
 
     if not api_key:
         st.error(
-            "GROQ_API_KEY is missing! Please configure `GROQ_API_KEY` in Streamlit Secrets (`.streamlit/secrets.toml`)."
+            "⚠️ GROQ_API_KEY is missing or invalid in Streamlit Secrets! "
+            "Please check Streamlit Cloud Settings -> Secrets and ensure it is formatted as: GROQ_API_KEY = \"gsk_...\""
         )
         st.stop()
 
