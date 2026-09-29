@@ -155,31 +155,36 @@ if "last_run_time" not in st.session_state:
     st.session_state.last_run_time = None
 
 # ============================================================
-# API KEY
+# API KEY (SAFE GETTER FIX)
 # ============================================================
 
 def get_api_key():
     """
-    Read GROQ_API_KEY from Streamlit Secrets first,
-    then fall back to environment variables.
+    Safely retrieves GROQ_API_KEY without attribute error on st.secrets.
     """
+    # Check environment variable first
+    env_key = os.getenv("GROQ_API_KEY", "")
+    if env_key:
+        return env_key
+
+    # Check Streamlit secrets safely
     try:
-        secret_key = st.secrets.get("GROQ_API_KEY", "")
-        if secret_key:
-            return secret_key
+        if hasattr(st, "secrets") and st.secrets:
+            if "GROQ_API_KEY" in st.secrets:
+                return str(st.secrets["GROQ_API_KEY"])
     except Exception:
         pass
 
-    return os.getenv("GROQ_API_KEY", "")
+    return ""
 
 # ============================================================
-# LLM (UPDATED & FIXED FOR GROQ COMPATIBILITY)
+# LLM (GROQ COMPATIBLE)
 # ============================================================
 
 def create_llm(api_key):
     """
     CrewAI LLM configured to use Groq.
-    cache=False disables cache_breakpoint parameters that cause Groq BadRequestError.
+    cache=False prevents prompt cache errors on Groq endpoints.
     """
     return LLM(
         model="groq/llama-3.3-70b-versatile",
