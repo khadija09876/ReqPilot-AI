@@ -146,7 +146,7 @@ radial-gradient(circle at 90% 10%, rgba(139, 92, 246, 0.07), transparent 25%),
 </style>
 """,
 unsafe_allow_html=True,
-```
+
 
 )
 
