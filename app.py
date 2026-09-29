@@ -160,18 +160,20 @@ if "last_run_time" not in st.session_state:
 
 def get_api_key():
     """
-    Safely retrieves GROQ_API_KEY without attribute error on st.secrets.
+    Safely retrieves GROQ_API_KEY preventing boolean/attribute error on st.secrets.
     """
-    # Check environment variable first
+    # 1. Environment Variable check
     env_key = os.getenv("GROQ_API_KEY", "")
-    if env_key:
-        return env_key
+    if env_key and isinstance(env_key, str) and len(env_key.strip()) > 0:
+        return env_key.strip()
 
-    # Check Streamlit secrets safely
+    # 2. Streamlit Secrets check with strict boolean/type checking
     try:
-        if hasattr(st, "secrets") and st.secrets:
+        if hasattr(st, "secrets") and bool(st.secrets):
             if "GROQ_API_KEY" in st.secrets:
-                return str(st.secrets["GROQ_API_KEY"])
+                key_val = st.secrets["GROQ_API_KEY"]
+                if key_val and isinstance(key_val, str) and len(key_val.strip()) > 0:
+                    return key_val.strip()
     except Exception:
         pass
 
@@ -183,14 +185,14 @@ def get_api_key():
 
 def create_llm(api_key):
     """
-    CrewAI LLM configured to use Groq.
-    cache=False prevents prompt cache errors on Groq endpoints.
+    CrewAI LLM explicitly configured for Groq with environment variable sync.
     """
+    os.environ["GROQ_API_KEY"] = api_key
+    
     return LLM(
         model="groq/llama-3.3-70b-versatile",
         api_key=api_key,
         temperature=0.2,
-        cache=False,
     )
 
 # ============================================================
@@ -289,10 +291,6 @@ def run_requirements_crew(
         qa_reviewer,
     ) = create_agents(llm)
 
-    # --------------------------------------------------------
-    # TASK 1 — BUSINESS ANALYSIS
-    # --------------------------------------------------------
-
     business_task = Task(
         description=f"""
 Analyze the following software project requirement.
@@ -340,10 +338,6 @@ Important:
         agent=business_analyst,
     )
 
-    # --------------------------------------------------------
-    # TASK 2 — TECHNICAL ANALYSIS
-    # --------------------------------------------------------
-
     technical_task = Task(
         description="""
 Using the Business Analyst's output as your primary context, create a
@@ -370,11 +364,6 @@ Review the previous analysis and produce:
 18. Technical risks
 19. Technical assumptions
 20. Open technical questions
-
-Do not select a technology merely because it is popular.
-Only identify technology constraints that are actually supported by
-the requirement. Clearly distinguish confirmed requirements from
-recommended considerations.
 """,
         expected_output=(
             "A structured technical requirements document covering "
@@ -384,10 +373,6 @@ recommended considerations.
         agent=technical_architect,
         context=[business_task],
     )
-
-    # --------------------------------------------------------
-    # TASK 3 — PRODUCT ANALYSIS
-    # --------------------------------------------------------
 
     product_task = Task(
         description="""
@@ -410,16 +395,6 @@ Produce:
 13. Product success indicators
 14. User-facing validation rules
 15. Important product decisions still requiring clarification
-
-User stories should use this format where appropriate:
-As a [user],
-I want [capability],
-so that [outcome].
-
-Acceptance criteria must be testable and concrete.
-
-Do not invent business facts. Where information is missing,
-identify it explicitly.
 """,
         expected_output=(
             "A product requirements analysis containing personas, journeys, "
@@ -429,10 +404,6 @@ identify it explicitly.
         agent=product_analyst,
         context=[business_task, technical_task],
     )
-
-    # --------------------------------------------------------
-    # TASK 4 — QA REQUIREMENTS AUDIT
-    # --------------------------------------------------------
 
     qa_task = Task(
         description="""
@@ -465,14 +436,6 @@ C. Recommended corrections
 D. QA test scenarios
 E. Final clarification questions
 F. Readiness assessment
-
-The readiness assessment must be one of:
-READY FOR DEVELOPMENT
-or
-NEEDS CLARIFICATION
-
-Do not declare something ready if critical ambiguity remains.
-Do not invent information to make the project appear complete.
 """,
         expected_output=(
             "A rigorous QA audit with defects, gaps, corrections, "
@@ -482,10 +445,6 @@ Do not invent information to make the project appear complete.
         agent=qa_reviewer,
         context=[business_task, technical_task, product_task],
     )
-
-    # --------------------------------------------------------
-    # CREW
-    # --------------------------------------------------------
 
     crew = Crew(
         agents=[
@@ -520,26 +479,10 @@ with st.sidebar:
     st.markdown("### Multi-Agent Pipeline")
 
     agents_info = [
-        (
-            "01",
-            "Business Analyst",
-            "Business objectives, actors, workflows and functional requirements.",
-        ),
-        (
-            "02",
-            "Technical Architect",
-            "Technical requirements, security, data and non-functional requirements.",
-        ),
-        (
-            "03",
-            "Product Analyst",
-            "Personas, user journeys, stories and acceptance criteria.",
-        ),
-        (
-            "04",
-            "QA Reviewer",
-            "Quality audit, gaps, testability and readiness assessment.",
-        ),
+        ("01", "Business Analyst", "Business objectives, actors, workflows and functional requirements."),
+        ("02", "Technical Architect", "Technical requirements, security, data and non-functional requirements."),
+        ("03", "Product Analyst", "Personas, user journeys, stories and acceptance criteria."),
+        ("04", "QA Reviewer", "Quality audit, gaps, testability and readiness assessment."),
     ]
 
     for number, title, description in agents_info:
@@ -561,11 +504,6 @@ with st.sidebar:
     st.write("**LLM Provider:** Groq")
     st.write("**Model:** Llama 3.3 70B Versatile")
     st.write("**Interface:** Streamlit")
-    st.write("**Deployment:** Streamlit Community Cloud")
-
-    st.divider()
-
-    st.caption("API keys are read from Streamlit Secrets.")
 
 # ============================================================
 # HERO
@@ -582,60 +520,26 @@ multi-agent AI workflow. </p> </div>
 )
 
 # ============================================================
-# INTRO
-# ============================================================
-
-st.markdown(
-    """ <div class="section-title">Requirements Analysis Workspace</div>
-""",
-    unsafe_allow_html=True,
-)
-
-st.write(
-    "Describe the software product or business problem below. "
-    "ReqPilot AI will route the requirement through four specialized "
-    "CrewAI agents."
-)
-
-# ============================================================
 # INPUT FORM
 # ============================================================
+
+st.markdown('<div class="section-title">Requirements Analysis Workspace</div>', unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
 
 with col1:
-    project_name = st.text_input(
-        "Project Name",
-        placeholder="e.g. Employee Leave Management System",
-    )
+    project_name = st.text_input("Project Name", placeholder="e.g. Leave Management System")
 
 with col2:
-    business_domain = st.text_input(
-        "Business Domain",
-        placeholder="e.g. Human Resources / Enterprise Software",
-    )
+    business_domain = st.text_input("Business Domain", placeholder="e.g. Human Resources")
 
 raw_requirement = st.text_area(
     "Raw Business / Software Requirement",
-    height=230,
-    placeholder=(
-        "Example:\n\n"
-        "Our company needs a centralized employee leave management "
-        "system where employees can submit leave requests, managers "
-        "can approve or reject requests, HR can manage policies and "
-        "administrators can monitor leave records and reports."
-    ),
+    height=200,
+    placeholder="Describe requirements here...",
 )
 
-# ============================================================
-# RUN BUTTON
-# ============================================================
-
-run_analysis = st.button(
-    "◆ Run Autonomous Requirements Analysis",
-    type="primary",
-    use_container_width=True,
-)
+run_analysis = st.button("◆ Run Autonomous Requirements Analysis", type="primary", use_container_width=True)
 
 # ============================================================
 # EXECUTION
@@ -646,25 +550,16 @@ if run_analysis:
 
     if not api_key:
         st.error(
-            "GROQ_API_KEY is missing. Add GROQ_API_KEY to "
-            "Streamlit Cloud → Settings → Secrets."
+            "GROQ_API_KEY is missing or invalid! "
+            "Please configure `GROQ_API_KEY = \"gsk_...\"` in `.streamlit/secrets.toml` or Streamlit Cloud Secrets Settings."
         )
         st.stop()
 
-    if not project_name.strip():
-        st.warning("Please enter a project name.")
-        st.stop()
-
-    if not business_domain.strip():
-        st.warning("Please enter the business domain.")
-        st.stop()
-
-    if not raw_requirement.strip():
-        st.warning("Please enter the software/business requirement.")
+    if not project_name.strip() or not business_domain.strip() or not raw_requirement.strip():
+        st.warning("Please fill in all input fields.")
         st.stop()
 
     st.session_state.analysis_result = None
-
     progress_box = st.empty()
 
     try:
@@ -672,7 +567,7 @@ if run_analysis:
             """
             <div class="status-box">
                 <strong>AI pipeline started.</strong><br>
-                CrewAI is executing the requirements agents sequentially.
+                Executing agents via CrewAI...
             </div>
             """,
             unsafe_allow_html=True,
@@ -680,9 +575,7 @@ if run_analysis:
 
         llm = create_llm(api_key)
 
-        with st.spinner(
-            "Business Analyst → Technical Architect → Product Analyst → QA Reviewer"
-        ):
+        with st.spinner("Processing Agents: BA → Technical Architect → Product Analyst → QA Reviewer"):
             result = run_requirements_crew(
                 project_name=project_name.strip(),
                 business_domain=business_domain.strip(),
@@ -690,27 +583,16 @@ if run_analysis:
                 llm=llm,
             )
 
-        final_report = str(result)
-
-        st.session_state.analysis_result = final_report
+        st.session_state.analysis_result = str(result)
         st.session_state.last_project = project_name.strip()
-        st.session_state.last_run_time = datetime.now().strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+        st.session_state.last_run_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         progress_box.empty()
-
-        st.success(
-            "Requirements analysis completed successfully."
-        )
+        st.success("Requirements analysis completed successfully!")
 
     except Exception as error:
         progress_box.empty()
-
-        st.error(
-            "The CrewAI workflow could not be completed."
-        )
-
+        st.error("The CrewAI workflow could not be completed.")
         with st.expander("Technical error details"):
             st.code(str(error))
 
@@ -721,62 +603,13 @@ if run_analysis:
 if st.session_state.analysis_result:
     st.divider()
 
-    st.markdown(
-        '<div class="section-title">Final Requirements Specification</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="section-title">Final Requirements Specification</div>', unsafe_allow_html=True)
 
-    metric1, metric2, metric3 = st.columns(3)
-
-    with metric1:
-        st.markdown(
-            """
-            <div class="metric-box">
-                <div class="metric-value">4</div>
-                <div class="metric-label">AI Agents Executed</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with metric2:
-        st.markdown(
-            """
-            <div class="metric-box">
-                <div class="metric-value">Sequential</div>
-                <div class="metric-label">CrewAI Process</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with metric3:
-        st.markdown(
-            """
-            <div class="metric-box">
-                <div class="metric-value">Groq</div>
-                <div class="metric-label">LLM Infrastructure</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.write("")
-
-    st.markdown(
-        f"**Project:** {st.session_state.last_project}"
-    )
-
+    st.markdown(f"**Project:** {st.session_state.last_project}")
     if st.session_state.last_run_time:
-        st.caption(
-            f"Analysis completed: {st.session_state.last_run_time}"
-        )
-
-    st.markdown("### Requirements Report")
+        st.caption(f"Completed at: {st.session_state.last_run_time}")
 
     st.markdown(st.session_state.analysis_result)
-
-    st.divider()
 
     st.download_button(
         label="↓ Download Requirements Report",
@@ -785,15 +618,3 @@ if st.session_state.analysis_result:
         mime="text/plain",
         use_container_width=True,
     )
-
-# ============================================================
-# FOOTER
-# ============================================================
-
-st.markdown(
-    """ <div class="footer">
-ReqPilot AI · Autonomous Software Requirements Engineering System <br>
-CrewAI × Groq × Streamlit </div>
-""",
-    unsafe_allow_html=True,
-)
