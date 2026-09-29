@@ -5,11 +5,14 @@ import streamlit as st
 from crewai import Agent, Crew, Process, Task, LLM
 
 # ============================================================
-# REQPILOT AI
-# Autonomous Software Requirements Engineering System
-# CrewAI + Groq + Streamlit
+# LITELLM / GROQ COMPATIBILITY FIXES
+# Prevent 'cache_breakpoint is unsupported' errors from Groq
 # ============================================================
+os.environ["DISABLE_PROMPT_CACHING"] = "TRUE"
 
+# ============================================================
+# PAGE CONFIGURATION
+# ============================================================
 st.set_page_config(
     page_title="ReqPilot AI",
     page_icon="◆",
@@ -18,11 +21,11 @@ st.set_page_config(
 )
 
 # ============================================================
-# CUSTOM CSS
+# CUSTOM STYLING (CSS)
 # ============================================================
-
 st.markdown(
-    """ <style>
+    """
+    <style>
     .stApp {
         background:
         radial-gradient(circle at 10% 0%, rgba(37, 99, 235, 0.08), transparent 28%),
@@ -142,9 +145,8 @@ st.markdown(
 )
 
 # ============================================================
-# SESSION STATE
+# SESSION STATE INITIALIZATION
 # ============================================================
-
 if "analysis_result" not in st.session_state:
     st.session_state.analysis_result = None
 
@@ -155,19 +157,16 @@ if "last_run_time" not in st.session_state:
     st.session_state.last_run_time = None
 
 # ============================================================
-# API KEY (SAFE GETTER FIX)
+# SAFE API KEY RETRIEVAL
 # ============================================================
-
 def get_api_key():
     """
-    Safely retrieves GROQ_API_KEY preventing boolean/attribute error on st.secrets.
+    Safely retrieves GROQ_API_KEY from environment or secrets without crashing.
     """
-    # 1. Environment Variable check
     env_key = os.getenv("GROQ_API_KEY", "")
     if env_key and isinstance(env_key, str) and len(env_key.strip()) > 0:
         return env_key.strip()
 
-    # 2. Streamlit Secrets check with strict boolean/type checking
     try:
         if hasattr(st, "secrets") and bool(st.secrets):
             if "GROQ_API_KEY" in st.secrets:
@@ -180,38 +179,29 @@ def get_api_key():
     return ""
 
 # ============================================================
-# LLM (GROQ COMPATIBLE)
+# LLM CREATION (GROQ COMPATIBLE)
 # ============================================================
-
 def create_llm(api_key):
     """
-    CrewAI LLM explicitly configured for Groq with environment variable sync.
+    Creates CrewAI LLM configured specifically for Groq API.
     """
     os.environ["GROQ_API_KEY"] = api_key
-    
+
     return LLM(
         model="groq/llama-3.3-70b-versatile",
         api_key=api_key,
         temperature=0.2,
+        cache=False,  # Caching disabled for Groq API compatibility
     )
 
 # ============================================================
-# AGENTS
+# AGENTS CREATION
 # ============================================================
-
 def create_agents(llm):
     business_analyst = Agent(
         role="Senior Business Analyst",
-        goal=(
-            "Transform raw business ideas into precise, structured and "
-            "implementation-ready business requirements."
-        ),
-        backstory=(
-            "You are a senior business analyst experienced in software "
-            "requirements engineering, stakeholder analysis, process "
-            "mapping and business rule definition. You identify ambiguity "
-            "instead of inventing missing information."
-        ),
+        goal="Transform raw business ideas into structured and implementation-ready requirements.",
+        backstory="Experienced in software requirements engineering, process mapping, and rule definition.",
         llm=llm,
         verbose=False,
         allow_delegation=False,
@@ -219,16 +209,8 @@ def create_agents(llm):
 
     technical_architect = Agent(
         role="Senior Technical Requirements Architect",
-        goal=(
-            "Convert validated business requirements into clear technical "
-            "requirements and non-functional requirements."
-        ),
-        backstory=(
-            "You are a senior software architect who specializes in "
-            "requirements analysis, system architecture, APIs, data, "
-            "security, scalability, integrations and non-functional "
-            "requirements."
-        ),
+        goal="Convert business requirements into technical specs, architecture, and non-functional requirements.",
+        backstory="Specializes in system architecture, APIs, data modeling, security, and scalability.",
         llm=llm,
         verbose=False,
         allow_delegation=False,
@@ -236,15 +218,8 @@ def create_agents(llm):
 
     product_analyst = Agent(
         role="Senior Product Analyst",
-        goal=(
-            "Translate the analyzed requirements into user-centered "
-            "product behavior, user stories and acceptance criteria."
-        ),
-        backstory=(
-            "You are an experienced product analyst specializing in "
-            "personas, user journeys, user stories, acceptance criteria, "
-            "MVP definition and edge-case analysis."
-        ),
+        goal="Translate requirements into user journeys, user stories, and testable acceptance criteria.",
+        backstory="Expert in user story mapping, acceptance criteria formulation, and MVP defining.",
         llm=llm,
         verbose=False,
         allow_delegation=False,
@@ -252,237 +227,103 @@ def create_agents(llm):
 
     qa_reviewer = Agent(
         role="Senior QA Requirements Reviewer",
-        goal=(
-            "Audit the complete requirements package for ambiguity, "
-            "missing requirements, contradictions, testability and "
-            "implementation risks."
-        ),
-        backstory=(
-            "You are a senior QA and requirements quality reviewer. "
-            "You challenge unclear requirements, identify gaps and "
-            "produce actionable corrections and test scenarios."
-        ),
+        goal="Audit requirements for ambiguity, missing edge-cases, and produce test scenarios.",
+        backstory="Senior QA lead who ensures requirement testability and development readiness.",
         llm=llm,
         verbose=False,
         allow_delegation=False,
     )
 
-    return (
-        business_analyst,
-        technical_architect,
-        product_analyst,
-        qa_reviewer,
-    )
+    return business_analyst, technical_architect, product_analyst, qa_reviewer
 
 # ============================================================
-# CREW WORKFLOW
+# WORKFLOW EXECUTION
 # ============================================================
-
-def run_requirements_crew(
-    project_name,
-    business_domain,
-    raw_requirement,
-    llm,
-):
-    (
-        business_analyst,
-        technical_architect,
-        product_analyst,
-        qa_reviewer,
-    ) = create_agents(llm)
+def run_requirements_crew(project_name, business_domain, raw_requirement, llm):
+    ba_agent, tech_agent, prod_agent, qa_agent = create_agents(llm)
 
     business_task = Task(
         description=f"""
-Analyze the following software project requirement.
+Analyze the project requirement:
+PROJECT NAME: {project_name}
+BUSINESS DOMAIN: {business_domain}
+RAW REQUIREMENT: {raw_requirement}
 
-PROJECT NAME:
-{project_name}
-
-BUSINESS DOMAIN:
-{business_domain}
-
-RAW REQUIREMENT:
-{raw_requirement}
-
-Produce a structured business requirements analysis.
-
-Cover:
-1. Business objective
-2. Problem statement
-3. Business value
-4. Stakeholders
-5. Primary users
-6. Secondary users
-7. System actors
-8. Core business workflows
-9. Functional requirements
-10. Business rules
-11. Inputs
-12. Outputs
-13. Assumptions
-14. Ambiguities
-15. Missing information
-16. Important clarification questions
-
-Important:
-- Do not invent facts that are not supported by the raw requirement.
-- Clearly mark assumptions.
-- Make every requirement specific and actionable.
-- Use professional requirements-engineering terminology.
+Produce a structured business requirements analysis covering:
+1. Business Objective & Problem Statement
+2. Stakeholders & Users
+3. Functional Requirements
+4. Core Business Rules & Workflows
+5. Assumptions, Ambiguities & Open Questions
 """,
-        expected_output=(
-            "A detailed and structured business requirements analysis "
-            "containing functional requirements, stakeholders, workflows, "
-            "business rules, assumptions, ambiguities and clarification questions."
-        ),
-        agent=business_analyst,
+        expected_output="Structured business requirements document.",
+        agent=ba_agent,
     )
 
     technical_task = Task(
         description="""
-Using the Business Analyst's output as your primary context, create a
-technical requirements analysis.
-
-Review the previous analysis and produce:
-1. System capabilities
-2. Technical requirements
-3. Functional-to-technical mapping
-4. Authentication requirements
-5. Authorization requirements
-6. Data requirements
-7. API requirements
-8. External integration requirements
-9. Security requirements
-10. Privacy considerations
-11. Performance requirements
-12. Availability requirements
-13. Scalability requirements
-14. Reliability requirements
-15. Maintainability requirements
-16. Observability requirements
-17. Dependency considerations
-18. Technical risks
-19. Technical assumptions
-20. Open technical questions
+Using the Business Analyst output, produce technical requirements covering:
+1. System Capabilities & Architecture
+2. Data & API Requirements
+3. Security, Authentication & Privacy
+4. Non-Functional Requirements (Performance, Scalability)
+5. Technical Risks & Open Technical Questions
 """,
-        expected_output=(
-            "A structured technical requirements document covering "
-            "functional technical requirements, NFRs, security, data, "
-            "integrations, risks and open technical questions."
-        ),
-        agent=technical_architect,
+        expected_output="Detailed technical requirements specification.",
+        agent=tech_agent,
         context=[business_task],
     )
 
     product_task = Task(
         description="""
-Using the Business Analyst and Technical Analyst outputs, define the
-product-level requirements.
-
-Produce:
-1. User personas
-2. Persona goals
-3. Main user journeys
-4. End-to-end workflows
-5. User stories
-6. Acceptance criteria
-7. Edge cases
-8. Error scenarios
-9. Usability requirements
-10. Accessibility considerations
-11. MVP scope
-12. Post-MVP enhancement candidates
-13. Product success indicators
-14. User-facing validation rules
-15. Important product decisions still requiring clarification
+Based on the previous outputs, generate:
+1. User Personas & Main Journeys
+2. User Stories (As a... I want... So that...)
+3. Testable Acceptance Criteria
+4. Edge Cases & Error Scenarios
+5. MVP Scope vs Future Scope
 """,
-        expected_output=(
-            "A product requirements analysis containing personas, journeys, "
-            "user stories, testable acceptance criteria, edge cases, "
-            "MVP scope and unresolved product questions."
-        ),
-        agent=product_analyst,
+        expected_output="Product requirement document with user stories and acceptance criteria.",
+        agent=prod_agent,
         context=[business_task, technical_task],
     )
 
     qa_task = Task(
         description="""
-Audit the complete requirements package produced by the previous agents.
-
-Perform a rigorous requirements-quality review.
-
-Check for:
-1. Missing requirements
-2. Ambiguous requirements
-3. Contradictory requirements
-4. Duplicate requirements
-5. Untestable requirements
-6. Weak acceptance criteria
-7. Missing edge cases
-8. Missing error handling
-9. Security gaps
-10. Data/privacy gaps
-11. Performance gaps
-12. Integration risks
-13. Implementation risks
-14. Unclear assumptions
-15. Missing stakeholder decisions
-16. Requirements that require clarification
-
-Then produce:
-A. Requirements quality findings
-B. Critical gaps
-C. Recommended corrections
-D. QA test scenarios
-E. Final clarification questions
-F. Readiness assessment
+Perform a comprehensive audit on the entire requirements suite:
+1. Identify missing requirements, gaps, or contradictions
+2. Testability audit
+3. QA Test Scenarios
+4. Final Readiness Assessment: (READY FOR DEVELOPMENT or NEEDS CLARIFICATION)
 """,
-        expected_output=(
-            "A rigorous QA audit with defects, gaps, corrections, "
-            "test scenarios, clarification questions and a final "
-            "development-readiness assessment."
-        ),
-        agent=qa_reviewer,
+        expected_output="Comprehensive QA audit report and readiness assessment.",
+        agent=qa_agent,
         context=[business_task, technical_task, product_task],
     )
 
     crew = Crew(
-        agents=[
-            business_analyst,
-            technical_architect,
-            product_analyst,
-            qa_reviewer,
-        ],
-        tasks=[
-            business_task,
-            technical_task,
-            product_task,
-            qa_task,
-        ],
+        agents=[ba_agent, tech_agent, prod_agent, qa_agent],
+        tasks=[business_task, technical_task, product_task, qa_task],
         process=Process.sequential,
         verbose=False,
     )
 
-    result = crew.kickoff()
-    return result
+    return crew.kickoff()
 
 # ============================================================
 # SIDEBAR
 # ============================================================
-
 with st.sidebar:
     st.markdown("## ◆ ReqPilot AI")
     st.caption("Autonomous Requirements Engineering")
-
     st.divider()
 
     st.markdown("### Multi-Agent Pipeline")
-
     agents_info = [
-        ("01", "Business Analyst", "Business objectives, actors, workflows and functional requirements."),
-        ("02", "Technical Architect", "Technical requirements, security, data and non-functional requirements."),
-        ("03", "Product Analyst", "Personas, user journeys, stories and acceptance criteria."),
-        ("04", "QA Reviewer", "Quality audit, gaps, testability and readiness assessment."),
+        ("01", "Business Analyst", "Business objectives, actors, workflows."),
+        ("02", "Technical Architect", "Technical requirements, APIs, security."),
+        ("03", "Product Analyst", "User stories & acceptance criteria."),
+        ("04", "QA Reviewer", "Quality audit & readiness assessment."),
     ]
 
     for number, title, description in agents_info:
@@ -498,65 +339,55 @@ with st.sidebar:
         )
 
     st.divider()
-
-    st.markdown("### AI Infrastructure")
+    st.markdown("### AI Stack")
     st.write("**Framework:** CrewAI")
-    st.write("**LLM Provider:** Groq")
+    st.write("**Provider:** Groq")
     st.write("**Model:** Llama 3.3 70B Versatile")
-    st.write("**Interface:** Streamlit")
 
 # ============================================================
-# HERO
+# MAIN UI
 # ============================================================
-
 st.markdown(
-    """ <div class="hero"> <h1>◆ ReqPilot AI</h1> <p>
-Autonomous Software Requirements Engineering System <br>
-Transform raw software ideas into structured, auditable and
-implementation-ready requirements using a collaborative
-multi-agent AI workflow. </p> </div>
-""",
+    """
+    <div class="hero">
+        <h1>◆ ReqPilot AI</h1>
+        <p>Autonomous Software Requirements Engineering System<br>
+        Transform raw ideas into structured and auditable software specifications.</p>
+    </div>
+    """,
     unsafe_allow_html=True,
 )
-
-# ============================================================
-# INPUT FORM
-# ============================================================
 
 st.markdown('<div class="section-title">Requirements Analysis Workspace</div>', unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
-
 with col1:
     project_name = st.text_input("Project Name", placeholder="e.g. Leave Management System")
-
 with col2:
     business_domain = st.text_input("Business Domain", placeholder="e.g. Human Resources")
 
 raw_requirement = st.text_area(
-    "Raw Business / Software Requirement",
+    "Raw Requirement Description",
     height=200,
-    placeholder="Describe requirements here...",
+    placeholder="Describe your software system idea or business problem in detail...",
 )
 
 run_analysis = st.button("◆ Run Autonomous Requirements Analysis", type="primary", use_container_width=True)
 
 # ============================================================
-# EXECUTION
+# EXECUTION LOGIC
 # ============================================================
-
 if run_analysis:
     api_key = get_api_key()
 
     if not api_key:
         st.error(
-            "GROQ_API_KEY is missing or invalid! "
-            "Please configure `GROQ_API_KEY = \"gsk_...\"` in `.streamlit/secrets.toml` or Streamlit Cloud Secrets Settings."
+            "GROQ_API_KEY is missing! Please configure `GROQ_API_KEY` in Streamlit Secrets (`.streamlit/secrets.toml`)."
         )
         st.stop()
 
     if not project_name.strip() or not business_domain.strip() or not raw_requirement.strip():
-        st.warning("Please fill in all input fields.")
+        st.warning("Please complete all input fields before running analysis.")
         st.stop()
 
     st.session_state.analysis_result = None
@@ -566,8 +397,8 @@ if run_analysis:
         progress_box.markdown(
             """
             <div class="status-box">
-                <strong>AI pipeline started.</strong><br>
-                Executing agents via CrewAI...
+                <strong>AI Workflow Triggered.</strong><br>
+                Running Agents: BA → Technical Architect → Product Analyst → QA Reviewer...
             </div>
             """,
             unsafe_allow_html=True,
@@ -575,7 +406,7 @@ if run_analysis:
 
         llm = create_llm(api_key)
 
-        with st.spinner("Processing Agents: BA → Technical Architect → Product Analyst → QA Reviewer"):
+        with st.spinner("Analyzing requirements via CrewAI agents..."):
             result = run_requirements_crew(
                 project_name=project_name.strip(),
                 business_domain=business_domain.strip(),
@@ -588,33 +419,43 @@ if run_analysis:
         st.session_state.last_run_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         progress_box.empty()
-        st.success("Requirements analysis completed successfully!")
+        st.success("Analysis completed successfully!")
 
     except Exception as error:
         progress_box.empty()
-        st.error("The CrewAI workflow could not be completed.")
-        with st.expander("Technical error details"):
+        st.error("The CrewAI workflow encountered an unexpected error.")
+        with st.expander("Technical Error Log"):
             st.code(str(error))
 
 # ============================================================
-# RESULTS
+# RESULTS DISPLAY
 # ============================================================
-
 if st.session_state.analysis_result:
     st.divider()
-
     st.markdown('<div class="section-title">Final Requirements Specification</div>', unsafe_allow_html=True)
 
     st.markdown(f"**Project:** {st.session_state.last_project}")
     if st.session_state.last_run_time:
-        st.caption(f"Completed at: {st.session_state.last_run_time}")
+        st.caption(f"Generated on: {st.session_state.last_run_time}")
 
     st.markdown(st.session_state.analysis_result)
 
     st.download_button(
-        label="↓ Download Requirements Report",
+        label="↓ Download Report (.txt)",
         data=st.session_state.analysis_result,
-        file_name="reqpilot_requirements_report.txt",
+        file_name=f"{st.session_state.last_project.lower().replace(' ', '_')}_requirements.txt",
         mime="text/plain",
         use_container_width=True,
     )
+
+# ============================================================
+# FOOTER
+# ============================================================
+st.markdown(
+    """
+    <div class="footer">
+        ReqPilot AI · CrewAI × Groq × Streamlit
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
