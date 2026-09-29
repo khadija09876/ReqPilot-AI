@@ -173,17 +173,19 @@ def get_api_key():
     return os.getenv("GROQ_API_KEY", "")
 
 # ============================================================
-# LLM
+# LLM (UPDATED & FIXED FOR GROQ COMPATIBILITY)
 # ============================================================
 
 def create_llm(api_key):
     """
     CrewAI LLM configured to use Groq.
+    cache=False disables cache_breakpoint parameters that cause Groq BadRequestError.
     """
     return LLM(
-        model="groq/openai/gpt-oss-120b",
+        model="groq/llama-3.3-70b-versatile",
         api_key=api_key,
         temperature=0.2,
+        cache=False,
     )
 
 # ============================================================
@@ -552,7 +554,7 @@ with st.sidebar:
     st.markdown("### AI Infrastructure")
     st.write("**Framework:** CrewAI")
     st.write("**LLM Provider:** Groq")
-    st.write("**Model:** GPT-OSS 120B")
+    st.write("**Model:** Llama 3.3 70B Versatile")
     st.write("**Interface:** Streamlit")
     st.write("**Deployment:** Streamlit Community Cloud")
 
